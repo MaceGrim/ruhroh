@@ -44,6 +44,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   selectThread: async (threadId: string) => {
+    // Clear streaming state when switching threads
+    set({
+      streamStatus: null,
+      streamingContent: "",
+      streamingCitations: [],
+      isSending: false,
+    });
+
     try {
       const thread = await api.getThread(threadId);
       set({ currentThread: thread });
@@ -108,11 +116,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
+        // Process any data we received (even on final chunk)
+        if (value) {
+          buffer += decoder.decode(value, { stream: !done });
+        }
+
+        // If stream is done, flush any remaining buffer content
+        if (done) {
+          buffer += decoder.decode(); // Flush decoder
+        }
+
         const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
+        buffer = done ? "" : lines.pop() || "";
 
         for (const line of lines) {
           if (line.startsWith("event: ")) {
@@ -124,30 +140,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
             try {
               const data = JSON.parse(dataStr);
 
-              if (data.stage) {
-                set({ streamStatus: data.stage });
-              } else if (data.content !== undefined) {
-                set({
-                  streamingContent: get().streamingContent + data.content,
-                });
-              } else if (data.index !== undefined && data.chunk_id) {
-                // Citation
-                set({
-                  streamingCitations: [...get().streamingCitations, data],
-                });
-              } else if (data.title !== undefined) {
-                // Title event - update thread name
-                const { threads, currentThread } = get();
-                if (currentThread) {
-                  set({
-                    currentThread: { ...currentThread, name: data.title },
-                    threads: threads.map((t) =>
-                      t.id === currentThread.id ? { ...t, name: data.title } : t
-                    ),
-                  });
-                }
-              } else if (data.message_id) {
-                // Done event - finalize the message
+              if (data.message_id) {
+                // Done event - finalize the message (check first since done has content too)
                 const assistantMessage: Message = {
                   id: data.message_id,
                   role: "assistant",
@@ -174,12 +168,46 @@ export const useChatStore = create<ChatState>((set, get) => ({
                     streamingCitations: [],
                   });
                 }
+              } else if (data.stage) {
+                set({ streamStatus: data.stage });
+              } else if (data.content !== undefined) {
+                set({
+                  streamingContent: get().streamingContent + data.content,
+                });
+              } else if (data.index !== undefined && data.chunk_id) {
+                // Citation
+                set({
+                  streamingCitations: [...get().streamingCitations, data],
+                });
+              } else if (data.title !== undefined) {
+                // Title event - update thread name
+                const { threads, currentThread } = get();
+                if (currentThread) {
+                  set({
+                    currentThread: { ...currentThread, name: data.title },
+                    threads: threads.map((t) =>
+                      t.id === currentThread.id ? { ...t, name: data.title } : t
+                    ),
+                  });
+                }
               }
             } catch {
               // Ignore parse errors for incomplete chunks
             }
           }
         }
+
+        // Exit loop after processing final data
+        if (done) break;
+      }
+
+      // Always reset isSending after stream ends (handles cases where done event wasn't received)
+      const { isSending } = get();
+      if (isSending) {
+        set({
+          isSending: false,
+          streamStatus: null,
+        });
       }
     } catch (err) {
       set({
