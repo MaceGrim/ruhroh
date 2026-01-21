@@ -40,7 +40,7 @@ function CitationBadge({ citation }: { citation: Citation }) {
               <p className="text-sm font-medium text-gray-900 dark:text-white">
                 {citation.document_name}
               </p>
-              {citation.pages.length > 0 && (
+              {citation.pages && citation.pages.length > 0 && (
                 <p className="text-xs text-gray-500">
                   Page{citation.pages.length > 1 ? "s" : ""}: {citation.pages.join(", ")}
                 </p>
