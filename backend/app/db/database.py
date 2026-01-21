@@ -2,8 +2,9 @@
 
 from typing import AsyncGenerator
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import QueuePool
+from sqlalchemy.pool import NullPool
 
 from app.config import get_settings
 
@@ -18,10 +19,7 @@ def get_engine():
         settings = get_settings()
         _engine = create_async_engine(
             settings.database_url,
-            poolclass=QueuePool,
-            pool_size=10,
-            max_overflow=20,
-            pool_timeout=30,
+            poolclass=NullPool,  # NullPool works with async engines
             echo=settings.debug,
         )
     return _engine
@@ -58,7 +56,7 @@ async def init_db() -> None:
     # Just verify connection works
     engine = get_engine()
     async with engine.begin() as conn:
-        await conn.execute("SELECT 1")
+        await conn.execute(text("SELECT 1"))
 
 
 async def close_db() -> None:
@@ -75,7 +73,7 @@ async def check_db_health() -> bool:
     try:
         engine = get_engine()
         async with engine.begin() as conn:
-            await conn.execute("SELECT 1")
+            await conn.execute(text("SELECT 1"))
         return True
     except Exception:
         return False

@@ -12,6 +12,9 @@ from app.db.repositories.user import UserRepository
 from app.db.models import User
 from app.services.auth import AuthService
 
+# Dev mode user ID (used when DEV_MODE=true)
+DEV_USER_ID = UUID("00000000-0000-0000-0000-000000000001")
+
 
 async def get_auth_service(
     settings: Annotated[Settings, Depends(get_settings)],
@@ -22,9 +25,14 @@ async def get_auth_service(
 
 async def get_current_user_id(
     authorization: Annotated[str | None, Header()] = None,
-    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    settings: Annotated[Settings, Depends(get_settings)] = None,
+    auth_service: Annotated[AuthService, Depends(get_auth_service)] = None,
 ) -> UUID:
     """Extract and validate user ID from JWT token."""
+    # Dev mode: bypass auth
+    if settings and settings.dev_mode:
+        return DEV_USER_ID
+
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -52,10 +60,19 @@ async def get_current_user_id(
 async def get_current_user(
     user_id: Annotated[UUID, Depends(get_current_user_id)],
     db: Annotated[AsyncSession, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)] = None,
 ) -> User:
     """Get current user from database."""
     user_repo = UserRepository(db)
     user = await user_repo.get_by_id(user_id)
+
+    # Dev mode: create dev user if not exists
+    if not user and settings and settings.dev_mode and user_id == DEV_USER_ID:
+        user = await user_repo.create(
+            user_id=DEV_USER_ID,
+            email="dev@localhost",
+            role="admin",  # Admin for full access in dev mode
+        )
 
     if not user:
         raise HTTPException(
