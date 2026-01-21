@@ -22,13 +22,16 @@ function CitationBadge({ citation }: { citation: Citation }) {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <span className="relative inline-block">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="inline-flex items-center justify-center w-5 h-5 text-xs font-medium bg-primary/10 text-primary rounded hover:bg-primary/20 transition-colors"
+    <span
+      className="relative inline-block"
+      onMouseEnter={() => setIsOpen(true)}
+      onMouseLeave={() => setIsOpen(false)}
+    >
+      <span
+        className="inline-flex items-center justify-center w-5 h-5 text-xs font-medium bg-primary/10 text-primary rounded hover:bg-primary/20 transition-colors cursor-help"
       >
         {citation.index}
-      </button>
+      </span>
       {isOpen && (
         <div className="absolute z-10 bottom-full left-0 mb-2 w-72 p-3 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
           <div className="flex items-start gap-2 mb-2">
