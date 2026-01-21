@@ -64,6 +64,22 @@ from app.models.schema import (
     ExtractionSchemaListResponse,
 )
 from app.models.eval import (
+    # Single eval
+    SingleEvalRequest,
+    SingleEvalResponse,
+    RetrievedContext,
+    EvalMetrics,
+    # Batch eval
+    TestCase,
+    BatchEvalRequest,
+    TestCaseResult,
+    BatchEvalSummary,
+    BatchEvalResponse,
+    BatchEvalStatusResponse,
+    # History
+    EvalHistoryItem,
+    EvalHistoryResponse,
+    # Original models
     EvalRunRequest,
     EvalRunResponse,
     EvalProgress,
@@ -137,7 +153,22 @@ __all__ = [
     "ExtractionSchemaUpdate",
     "ExtractionSchemaResponse",
     "ExtractionSchemaListResponse",
-    # Eval
+    # Eval - Single
+    "SingleEvalRequest",
+    "SingleEvalResponse",
+    "RetrievedContext",
+    "EvalMetrics",
+    # Eval - Batch
+    "TestCase",
+    "BatchEvalRequest",
+    "TestCaseResult",
+    "BatchEvalSummary",
+    "BatchEvalResponse",
+    "BatchEvalStatusResponse",
+    # Eval - History
+    "EvalHistoryItem",
+    "EvalHistoryResponse",
+    # Eval - Original
     "EvalRunRequest",
     "EvalRunResponse",
     "EvalProgress",
