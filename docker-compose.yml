@@ -96,18 +96,17 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
-        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
-        VITE_SUPABASE_URL: ${SUPABASE_URL}
-        VITE_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
     container_name: ruhroh-frontend
     restart: unless-stopped
+    environment:
+      VITE_API_URL: ""
+      VITE_DEV_MODE: ${VITE_DEV_MODE:-false}
     ports:
-      - "3000:3000"
+      - "3000:80"
     depends_on:
       - backend
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/"]
       interval: 30s
       timeout: 10s
       retries: 3

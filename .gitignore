@@ -33,3 +33,7 @@ Thumbs.db
 # Project specific
 uploads/
 *.db
+processed/
+
+# Frontend build
+frontend/dist/

@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+/* Custom theme variables */
+@theme {
+  --color-primary: oklch(0.546 0.245 262.881);
+  --color-primary-light: oklch(0.707 0.165 254.624);
+  --color-primary-dark: oklch(0.432 0.232 265.561);
+
+  --color-surface: oklch(0.985 0.002 247.839);
+  --color-surface-dark: oklch(0.145 0.005 285.823);
+
+  --color-success: oklch(0.723 0.191 142.542);
+  --color-warning: oklch(0.795 0.184 86.047);
+  --color-error: oklch(0.577 0.245 27.325);
+
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* Base styles */
+body {
+  @apply bg-white text-gray-900 antialiased;
+  font-family: var(--font-sans);
+  margin: 0;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  body {
+    @apply bg-gray-900 text-gray-100;
+  }
+}
