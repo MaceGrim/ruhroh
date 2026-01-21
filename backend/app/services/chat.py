@@ -104,11 +104,13 @@ class ChatService:
             "messages": [
                 {
                     "id": str(m.id),
+                    "thread_id": str(m.thread_id),
                     "role": m.role,
                     "content": m.content,
                     "citations": m.citations,
                     "model_used": m.model_used,
                     "is_from_documents": m.is_from_documents,
+                    "token_count": m.token_count,
                     "created_at": m.created_at.isoformat(),
                 }
                 for m in sorted(thread.messages, key=lambda x: x.created_at)
