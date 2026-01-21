@@ -1,0 +1,122 @@
+version: "3.8"
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: ruhroh-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-ruhroh}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-ruhroh}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Qdrant Vector Database
+  qdrant:
+    image: qdrant/qdrant:v1.7.4
+    container_name: ruhroh-qdrant
+    restart: unless-stopped
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-}
+    volumes:
+      - qdrant_data:/qdrant/storage
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:6333/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ruhroh-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-ruhroh}
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+      QDRANT_USE_TLS: "false"
+      QDRANT_COLLECTION_NAME: ${QDRANT_COLLECTION_NAME:-documents}
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      RUHROH_VECTOR_WEIGHT: ${RUHROH_VECTOR_WEIGHT:-0.6}
+      RUHROH_KEYWORD_WEIGHT: ${RUHROH_KEYWORD_WEIGHT:-0.4}
+      RUHROH_RRF_K: ${RUHROH_RRF_K:-60}
+      RUHROH_ENABLE_FALLBACK: ${RUHROH_ENABLE_FALLBACK:-false}
+      RUHROH_DEFAULT_MODEL: ${RUHROH_DEFAULT_MODEL:-gpt-4}
+      RUHROH_EMBEDDING_MODEL: ${RUHROH_EMBEDDING_MODEL:-text-embedding-3-small}
+      RUHROH_CHUNK_SIZE: ${RUHROH_CHUNK_SIZE:-512}
+      RUHROH_CHUNK_OVERLAP: ${RUHROH_CHUNK_OVERLAP:-50}
+      RUHROH_RATE_LIMIT_RPM: ${RUHROH_RATE_LIMIT_RPM:-60}
+      RUHROH_RATE_LIMIT_BURST: ${RUHROH_RATE_LIMIT_BURST:-10}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      UPLOAD_DIR: /app/uploads
+      PROCESSED_DIR: /app/processed
+      DEBUG: ${DEBUG:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - uploads_data:/app/uploads
+      - processed_data:/app/processed
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+        VITE_SUPABASE_URL: ${SUPABASE_URL}
+        VITE_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+    container_name: ruhroh-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres_data:
+    name: ruhroh_postgres_data
+  qdrant_data:
+    name: ruhroh_qdrant_data
+  uploads_data:
+    name: ruhroh_uploads_data
+  processed_data:
+    name: ruhroh_processed_data
