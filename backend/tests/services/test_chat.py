@@ -557,57 +557,40 @@ class TestExtractAndRenumberCitations:
 class TestBuildChatMessages:
     """Tests for building chat messages."""
 
-    @pytest.mark.asyncio
-    async def test_build_messages_with_context(
-        self, chat_service, sample_thread_id, sample_message
-    ):
+    def test_build_messages_with_context(self, chat_service):
         """Test building messages with document context."""
-        chat_service.message_repo.get_last_messages = AsyncMock(return_value=[])
-
-        messages = await chat_service._build_chat_messages(
-            sample_thread_id,
+        messages = chat_service._build_chat_messages(
             "Context from documents",
+            [],  # No history
             "What does it say?",
         )
 
-        assert len(messages) >= 2  # system + user
+        assert len(messages) == 2  # system + user
         assert messages[0]["role"] == "system"
         assert "Context from documents" in messages[0]["content"]
         assert messages[-1]["role"] == "user"
         assert messages[-1]["content"] == "What does it say?"
 
-    @pytest.mark.asyncio
-    async def test_build_messages_without_context(
-        self, chat_service, sample_thread_id
-    ):
+    def test_build_messages_without_context(self, chat_service):
         """Test building messages without document context."""
-        chat_service.message_repo.get_last_messages = AsyncMock(return_value=[])
-
-        messages = await chat_service._build_chat_messages(
-            sample_thread_id,
+        messages = chat_service._build_chat_messages(
             "",  # No context
+            [],  # No history
             "Hello!",
         )
 
-        assert len(messages) >= 2
+        assert len(messages) == 2
         assert "hasn't uploaded any documents" in messages[0]["content"]
 
-    @pytest.mark.asyncio
-    async def test_build_messages_with_history(
-        self, chat_service, sample_thread_id, sample_message
-    ):
+    def test_build_messages_with_history(self, chat_service):
         """Test building messages with conversation history."""
         history_message = MagicMock()
         history_message.role = "user"
         history_message.content = "Previous question"
 
-        chat_service.message_repo.get_last_messages = AsyncMock(
-            return_value=[history_message]
-        )
-
-        messages = await chat_service._build_chat_messages(
-            sample_thread_id,
+        messages = chat_service._build_chat_messages(
             "Context",
+            [history_message],  # Pre-fetched history
             "Current question",
         )
 
@@ -615,3 +598,26 @@ class TestBuildChatMessages:
         assert len(messages) == 3
         assert messages[1]["content"] == "Previous question"
         assert messages[2]["content"] == "Current question"
+
+    def test_build_messages_preserves_all_history(self, chat_service):
+        """Test that all history messages are preserved (no content-based filtering)."""
+        # Create history with repeated content - should all be preserved
+        msg1 = MagicMock()
+        msg1.role = "user"
+        msg1.content = "The answer is 5"
+
+        msg2 = MagicMock()
+        msg2.role = "assistant"
+        msg2.content = "I understand, the answer is 5."
+
+        messages = chat_service._build_chat_messages(
+            "Context",
+            [msg1, msg2],
+            "What is the answer?",
+        )
+
+        # Should include: system + 2 history messages + current query = 4
+        assert len(messages) == 4
+        assert messages[1]["content"] == "The answer is 5"
+        assert messages[2]["content"] == "I understand, the answer is 5."
+        assert messages[3]["content"] == "What is the answer?"
