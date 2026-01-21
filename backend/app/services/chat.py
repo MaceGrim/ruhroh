@@ -242,6 +242,7 @@ class ChatService:
         # Check if this is the first message (for auto-title generation)
         message_count = await self.message_repo.count_by_thread(thread_id)
         is_first_message = message_count == 0
+        logger.info("Message count check", thread_id=str(thread_id), message_count=message_count, is_first_message=is_first_message)
 
         # Save user message
         user_message = await self.message_repo.create(
@@ -305,7 +306,9 @@ class ChatService:
         # Generate title for new threads (after first message)
         new_title = None
         if is_first_message:
+            logger.info("Generating title for new thread", thread_id=str(thread_id))
             new_title = await self._generate_thread_title(content)
+            logger.info("Generated title", title=new_title, thread_id=str(thread_id))
             await self.thread_repo.update_name(thread_id, new_title)
             yield {"event": "title", "data": {"title": new_title}}
 

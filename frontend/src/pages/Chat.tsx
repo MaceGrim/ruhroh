@@ -62,14 +62,14 @@ function MessageContent({
 }) {
   // Parse content and replace citation markers with interactive badges
   if (!citations || citations.length === 0) {
-    return <p className="whitespace-pre-wrap">{content}</p>;
+    return <div className="whitespace-pre-wrap">{content}</div>;
   }
 
   const citationMap = new Map(citations.map((c) => [c.index, c]));
   const parts = content.split(/(\[\d+\])/g);
 
   return (
-    <p className="whitespace-pre-wrap">
+    <div className="whitespace-pre-wrap">
       {parts.map((part, i) => {
         const match = part.match(/^\[(\d+)\]$/);
         if (match) {
@@ -81,7 +81,7 @@ function MessageContent({
         }
         return <span key={i}>{part}</span>;
       })}
-    </p>
+    </div>
   );
 }
 
@@ -225,9 +225,9 @@ export function ChatPage() {
             <ul className="p-2 space-y-1">
               {threads.map((thread) => (
                 <li key={thread.id}>
-                  <button
+                  <div
                     onClick={() => selectThread(thread.id)}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-colors group ${
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-colors group cursor-pointer ${
                       currentThread?.id === thread.id
                         ? "bg-primary/10 text-primary"
                         : "hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
@@ -243,7 +243,7 @@ export function ChatPage() {
                     >
                       <Trash2 className="w-3 h-3" />
                     </button>
-                  </button>
+                  </div>
                 </li>
               ))}
             </ul>
