@@ -14,18 +14,20 @@ export type DocumentStatus = "pending" | "processing" | "ready" | "failed";
 export interface Document {
   id: string;
   filename: string;
-  content_type: string;
-  size_bytes: number;
+  normalized_filename: string;
+  file_type: string;
+  file_size: number;
+  page_count: number | null;
   status: DocumentStatus;
+  chunking_strategy: string;
+  ocr_enabled: boolean;
   error_message: string | null;
-  chunk_count: number;
   created_at: string;
   updated_at: string;
 }
 
 export interface DocumentUploadResponse {
-  id: string;
-  filename: string;
+  document_id: string;
   status: DocumentStatus;
 }
 

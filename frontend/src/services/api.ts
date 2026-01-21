@@ -62,8 +62,8 @@ class ApiClient {
 
   // Documents
   async getDocuments(): Promise<Document[]> {
-    const { data } = await this.client.get<Document[]>("/documents");
-    return data;
+    const { data } = await this.client.get<{ documents: Document[]; total: number }>("/documents");
+    return data.documents;
   }
 
   async getDocument(id: string): Promise<Document> {
@@ -76,7 +76,7 @@ class ApiClient {
     formData.append("file", file);
 
     const { data } = await this.client.post<DocumentUploadResponse>(
-      "/documents",
+      "/documents/upload",
       formData,
       {
         headers: {

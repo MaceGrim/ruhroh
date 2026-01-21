@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, userEvent, waitFor } from "@/test";
-import { server, mockDocument, mockDocuments } from "@/test";
+import { server, mockDocument } from "@/test";
 import { http, HttpResponse } from "msw";
 import { DocumentsPage } from "../Documents";
 import { useDocumentsStore } from "@/stores";

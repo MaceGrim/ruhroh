@@ -33,13 +33,16 @@ export const useDocumentsStore = create<DocumentsState>((set, get) => ({
   uploadDocument: async (file: File) => {
     const response = await api.uploadDocument(file);
     const newDoc: Document = {
-      id: response.id,
-      filename: response.filename,
-      content_type: file.type,
-      size_bytes: file.size,
+      id: response.document_id,
+      filename: file.name,
+      normalized_filename: file.name,
+      file_type: file.name.split(".").pop() || "unknown",
+      file_size: file.size,
+      page_count: null,
       status: response.status,
+      chunking_strategy: "fixed",
+      ocr_enabled: false,
       error_message: null,
-      chunk_count: 0,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useDocumentsStore } from "../documents";
 import { api } from "@/services/api";
-import { mockDocument, mockDocuments } from "@/test";
+import { mockDocument } from "@/test";
 
 // Mock the api module
 vi.mock("@/services/api", () => ({

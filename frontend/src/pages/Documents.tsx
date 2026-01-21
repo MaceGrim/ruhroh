@@ -193,7 +193,7 @@ export function DocumentsPage() {
                   Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Chunks
+                  Pages
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Actions
@@ -218,13 +218,13 @@ export function DocumentsPage() {
                             {doc.filename}
                           </div>
                           <div className="text-xs text-gray-500 dark:text-gray-400">
-                            {doc.content_type}
+                            {doc.file_type}
                           </div>
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                      {formatBytes(doc.size_bytes)}
+                      {formatBytes(doc.file_size)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span
@@ -244,7 +244,7 @@ export function DocumentsPage() {
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                      {doc.chunk_count}
+                      {doc.page_count ?? "-"}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right">
                       <button
