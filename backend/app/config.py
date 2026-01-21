@@ -60,6 +60,7 @@ class Settings(BaseSettings):
 
     # Server
     debug: bool = False
+    dev_mode: bool = False  # Bypass auth for local development
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
     @property

@@ -22,6 +22,7 @@ def get_qdrant_client() -> QdrantClient:
             api_key=settings.qdrant_api_key if settings.qdrant_api_key else None,
             https=settings.qdrant_use_tls,
             timeout=30,
+            check_compatibility=False,  # Allow newer client with older server
         )
     return _client
 
@@ -109,20 +110,22 @@ async def search_vectors(
         # Convert to Qdrant filter format
         search_filter = Filter(**filter_conditions)
 
-    results = client.search(
+    # Use query_points (newer API) instead of search
+    response = client.query_points(
         collection_name=collection_name,
-        query_vector=query_vector,
+        query=query_vector,
         limit=limit,
         query_filter=search_filter,
+        with_payload=True,
     )
 
     return [
         {
-            "id": result.id,
-            "score": result.score,
-            "payload": result.payload,
+            "id": point.id,
+            "score": point.score,
+            "payload": point.payload,
         }
-        for result in results
+        for point in response.points
     ]
 
 
