@@ -169,7 +169,9 @@ class DocumentRepository:
             .values(status="processing", updated_at=datetime.utcnow())
             .returning(Document.id)
         )
-        return result.rowcount > 0
+        row = result.scalar_one_or_none()
+        await self.session.commit()
+        return row is not None
 
     async def delete(self, document_id: UUID) -> bool:
         """Delete a document.
@@ -181,9 +183,11 @@ class DocumentRepository:
             True if deleted
         """
         result = await self.session.execute(
-            delete(Document).where(Document.id == document_id)
+            delete(Document).where(Document.id == document_id).returning(Document.id)
         )
-        return result.rowcount > 0
+        row = result.scalar_one_or_none()
+        await self.session.commit()
+        return row is not None
 
     async def list_by_user(
         self,
