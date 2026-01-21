@@ -10,6 +10,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
+from app.db.database import get_session_factory
 from app.db.repositories.document import DocumentRepository
 from app.db.repositories.chunk import ChunkRepository
 from app.services.llm import LLMService
@@ -36,14 +37,18 @@ class IngestionService:
     def __init__(
         self,
         settings: Settings,
-        session: AsyncSession,
-        llm_service: LLMService,
+        session: Optional[AsyncSession] = None,
+        llm_service: Optional[LLMService] = None,
     ):
         self.settings = settings
         self.session = session
-        self.doc_repo = DocumentRepository(session)
-        self.chunk_repo = ChunkRepository(session)
-        self.llm_service = llm_service
+        self.llm_service = llm_service or LLMService(settings)
+        if session:
+            self.doc_repo = DocumentRepository(session)
+            self.chunk_repo = ChunkRepository(session)
+        else:
+            self.doc_repo = None
+            self.chunk_repo = None
 
     def normalize_filename(self, filename: str) -> str:
         """Normalize a filename for duplicate detection.
@@ -78,79 +83,87 @@ class IngestionService:
         Raises:
             IngestionError: If processing fails
         """
-        # Claim document for processing
-        claimed = await self.doc_repo.claim_for_processing(document_id)
-        if not claimed:
-            logger.info(
-                "document_already_processing",
-                document_id=str(document_id),
-            )
-            return
+        # Create own session for background task processing
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            doc_repo = DocumentRepository(session)
+            chunk_repo = ChunkRepository(session)
 
-        try:
-            # Get document
-            document = await self.doc_repo.get_by_id(document_id)
-            if not document:
-                raise IngestionError(f"Document not found: {document_id}")
+            # Claim document for processing
+            claimed = await doc_repo.claim_for_processing(document_id)
+            if not claimed:
+                logger.info(
+                    "document_already_processing",
+                    document_id=str(document_id),
+                )
+                return
 
-            logger.info(
-                "processing_document",
-                document_id=str(document_id),
-                filename=document.filename,
-            )
+            try:
+                # Get document
+                document = await doc_repo.get_by_id(document_id)
+                if not document:
+                    raise IngestionError(f"Document not found: {document_id}")
 
-            # Extract text
-            text, page_boundaries, page_count = await self._extract_text(document)
-
-            # Update page count
-            if page_count:
-                await self.doc_repo.update_status(
-                    document_id,
-                    "processing",
-                    page_count=page_count,
+                logger.info(
+                    "processing_document",
+                    document_id=str(document_id),
+                    filename=document.filename,
                 )
 
-            # Chunk text
-            chunks = await self._chunk_text(
-                text,
-                document.chunking_strategy,
-                page_boundaries,
-            )
+                # Extract text
+                text, page_boundaries, page_count = await self._extract_text(document)
 
-            if not chunks:
-                raise IngestionError("No chunks generated from document")
+                # Update page count
+                if page_count:
+                    await doc_repo.update_status(
+                        document_id,
+                        "processing",
+                        page_count=page_count,
+                    )
 
-            # Store chunks in database
-            chunk_records = await self._store_chunks(document_id, chunks)
+                # Chunk text
+                chunks = await self._chunk_text(
+                    text,
+                    document.chunking_strategy,
+                    page_boundaries,
+                )
 
-            # Generate embeddings and store in Qdrant
-            await self._generate_and_store_vectors(
-                document_id,
-                document.user_id,
-                chunk_records,
-            )
+                if not chunks:
+                    raise IngestionError("No chunks generated from document")
 
-            # Mark as ready
-            await self.doc_repo.update_status(document_id, "ready")
+                # Store chunks in database
+                chunk_records = await self._store_chunks_with_repo(document_id, chunks, chunk_repo)
 
-            logger.info(
-                "document_processed",
-                document_id=str(document_id),
-                chunk_count=len(chunks),
-            )
+                # Generate embeddings and store in Qdrant
+                await self._generate_and_store_vectors(
+                    document_id,
+                    document.user_id,
+                    chunk_records,
+                )
 
-        except Exception as e:
-            logger.error(
-                "document_processing_failed",
-                document_id=str(document_id),
-                error=str(e),
-            )
-            await self.doc_repo.update_status(
-                document_id,
-                "failed",
-                error_message=str(e),
-            )
-            raise IngestionError(f"Processing failed: {e}")
+                # Mark as ready
+                await doc_repo.update_status(document_id, "ready")
+                await session.commit()
+
+                logger.info(
+                    "document_processed",
+                    document_id=str(document_id),
+                    chunk_count=len(chunks),
+                )
+
+            except Exception as e:
+                logger.error(
+                    "document_processing_failed",
+                    document_id=str(document_id),
+                    error=str(e),
+                )
+                await doc_repo.update_status(
+                    document_id,
+                    "failed",
+                    error_message=str(e),
+                )
+                await session.commit()
+                raise IngestionError(f"Processing failed: {e}")
 
     async def _extract_text(
         self,
@@ -205,11 +218,21 @@ class IngestionService:
         document_id: UUID,
         chunks: list[ChunkInfo],
     ) -> list[dict]:
+        """Store chunks in database using instance repo."""
+        return await self._store_chunks_with_repo(document_id, chunks, self.chunk_repo)
+
+    async def _store_chunks_with_repo(
+        self,
+        document_id: UUID,
+        chunks: list[ChunkInfo],
+        chunk_repo: ChunkRepository,
+    ) -> list[dict]:
         """Store chunks in database.
 
         Args:
             document_id: Document UUID
             chunks: List of ChunkInfo
+            chunk_repo: ChunkRepository instance
 
         Returns:
             List of created chunk records as dicts
@@ -228,7 +251,7 @@ class IngestionService:
             for chunk in chunks
         ]
 
-        chunk_records = await self.chunk_repo.create_many(chunk_data)
+        chunk_records = await chunk_repo.create_many(chunk_data)
 
         return [
             {
@@ -295,36 +318,56 @@ class IngestionService:
             chunking_strategy: New chunking strategy
             ocr_enabled: Whether to enable OCR
         """
-        document = await self.doc_repo.get_by_id(document_id)
-        if not document:
-            raise IngestionError(f"Document not found: {document_id}")
+        # Create own session for background task
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            doc_repo = DocumentRepository(session)
+            chunk_repo = ChunkRepository(session)
 
-        # Delete existing chunks from database
-        await self.chunk_repo.delete_by_document(document_id)
+            document = await doc_repo.get_by_id(document_id)
+            if not document:
+                raise IngestionError(f"Document not found: {document_id}")
 
-        # Delete vectors from Qdrant
-        await delete_vectors_by_filter(
-            self.settings.qdrant_collection_name,
-            {"must": [{"key": "document_id", "match": {"value": str(document_id)}}]},
-        )
+            # Delete existing chunks from database
+            await chunk_repo.delete_by_document(document_id)
 
-        # Update document settings and reset status
-        # This would need additional repository method
-        await self.doc_repo.update_status(document_id, "pending")
+            # Delete vectors from Qdrant
+            await delete_vectors_by_filter(
+                self.settings.qdrant_collection_name,
+                {"must": [{"key": "document_id", "match": {"value": str(document_id)}}]},
+            )
 
-        # Process again
+            # Update document settings and reset status
+            await doc_repo.update_status(document_id, "pending")
+            await session.commit()
+
+        # Process again (creates its own session)
         await self.process_document(document_id)
 
-    async def delete_document(self, document_id: UUID) -> bool:
+    async def delete_document(self, document_id: UUID, session: Optional[AsyncSession] = None) -> bool:
         """Delete a document and all associated data.
 
         Args:
             document_id: Document UUID
+            session: Optional session to use (creates own if not provided)
 
         Returns:
             True if deleted
         """
-        document = await self.doc_repo.get_by_id(document_id)
+        # Use provided session or create a new one
+        if session:
+            return await self._delete_document_with_session(document_id, session)
+
+        session_factory = get_session_factory()
+        async with session_factory() as new_session:
+            result = await self._delete_document_with_session(document_id, new_session)
+            await new_session.commit()
+            return result
+
+    async def _delete_document_with_session(self, document_id: UUID, session: AsyncSession) -> bool:
+        """Delete document using provided session."""
+        doc_repo = DocumentRepository(session)
+        document = await doc_repo.get_by_id(document_id)
         if not document:
             return False
 
@@ -354,4 +397,4 @@ class IngestionService:
             )
 
         # Delete from database (cascades to chunks)
-        return await self.doc_repo.delete(document_id)
+        return await doc_repo.delete(document_id)
