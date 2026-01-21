@@ -131,12 +131,13 @@ class MessageRepository:
             count: Number of messages
 
         Returns:
-            List of most recent messages
+            List of most recent messages in chronological order
         """
         result = await self.session.execute(
             select(Message)
             .where(Message.thread_id == thread_id)
-            .order_by(Message.created_at.desc())
+            # Use id as tiebreaker for deterministic ordering when timestamps match
+            .order_by(Message.created_at.desc(), Message.id.desc())
             .limit(count)
         )
         messages = list(result.scalars().all())
