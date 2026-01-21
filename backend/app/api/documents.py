@@ -87,7 +87,7 @@ async def upload_document(
 
     # Initialize repository and service
     doc_repo = DocumentRepository(db)
-    ingestion_service = IngestionService(settings, db, llm_service)
+    ingestion_service = IngestionService(settings)
 
     # Normalize filename
     filename = file.filename or "document"
@@ -107,7 +107,7 @@ async def upload_document(
 
     if existing and force_replace:
         # Delete existing document
-        await ingestion_service.delete_document(existing.id)
+        await ingestion_service.delete_document(existing.id, session=db)
 
     # Save file
     upload_dir = Path(settings.upload_dir)
@@ -128,6 +128,9 @@ async def upload_document(
         chunking_strategy=chunking_strategy,
         ocr_enabled=ocr_enabled,
     )
+
+    # Commit so background task can see the document
+    await db.commit()
 
     # Process in background
     background_tasks.add_task(
@@ -277,8 +280,8 @@ async def delete_document(
             detail={"code": "NOT_FOUND", "message": "Document not found"},
         )
 
-    ingestion_service = IngestionService(settings, db, llm_service)
-    await ingestion_service.delete_document(document_id)
+    ingestion_service = IngestionService(settings)
+    await ingestion_service.delete_document(document_id, session=db)
 
     return None
 
@@ -308,7 +311,7 @@ async def reprocess_document(
             detail={"code": "NOT_FOUND", "message": "Document not found"},
         )
 
-    ingestion_service = IngestionService(settings, db, llm_service)
+    ingestion_service = IngestionService(settings)
 
     # Reprocess in background
     background_tasks.add_task(
