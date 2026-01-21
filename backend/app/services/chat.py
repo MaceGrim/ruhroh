@@ -347,7 +347,7 @@ class ChatService:
                     "chunk_id": str(result.chunk_id),
                     "document_id": str(result.document_id),
                     "document_name": result.document_name,
-                    "page": result.page_numbers[0] if result.page_numbers else None,
+                    "pages": result.page_numbers or [],
                     "excerpt": excerpt,
                 })
 
