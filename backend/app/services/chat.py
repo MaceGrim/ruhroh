@@ -227,28 +227,31 @@ class ChatService:
             full_response += token
             yield {"event": "token", "data": {"content": token}}
 
-        # Extract and yield citations
-        citations = self._extract_citations(full_response, retrieval_results)
+        # Extract citations and renumber them sequentially
+        renumbered_response, citations = self._extract_and_renumber_citations(
+            full_response, retrieval_results
+        )
         for citation in citations:
             yield {"event": "citation", "data": citation}
 
-        # Save assistant message
+        # Save assistant message with renumbered content
         assistant_message = await self.message_repo.create(
             thread_id=thread_id,
             role="assistant",
-            content=full_response,
+            content=renumbered_response,
             citations=citations if citations else None,
             model_used=model_used,
             is_from_documents=is_from_documents,
-            token_count=self.llm_service.count_tokens(full_response),
+            token_count=self.llm_service.count_tokens(renumbered_response),
         )
 
-        # Yield done
+        # Yield done with renumbered content for clients to update their display
         yield {
             "event": "done",
             "data": {
                 "message_id": str(assistant_message.id),
                 "is_from_documents": is_from_documents,
+                "content": renumbered_response,
             },
         }
 
@@ -293,30 +296,44 @@ class ChatService:
 
         return messages
 
-    def _extract_citations(
+    def _extract_and_renumber_citations(
         self,
         response: str,
         retrieval_results: list[RetrievalResult],
-    ) -> list[dict]:
-        """Extract citations from response based on retrieval results.
+    ) -> tuple[str, list[dict]]:
+        """Extract citations from response and renumber them sequentially.
 
         Args:
             response: LLM response text
             retrieval_results: Retrieved chunks
 
         Returns:
-            List of citation dicts
+            Tuple of (renumbered_response, citations)
         """
         citations = []
 
         # Find citation markers like [1], [2], etc.
         pattern = r"\[(\d+)\]"
         matches = re.findall(pattern, response)
-        used_indices = set(int(m) for m in matches)
+        used_indices = sorted(set(int(m) for m in matches))
 
-        for idx in sorted(used_indices):
+        # Create mapping from old index to new sequential index
+        old_to_new = {old_idx: new_idx for new_idx, old_idx in enumerate(used_indices, start=1)}
+
+        # Renumber citations in response text using temporary placeholders to avoid cascading replacements
+        # First pass: replace [N] with temporary placeholder <<N>>
+        renumbered_response = response
+        for old_idx in used_indices:
+            renumbered_response = renumbered_response.replace(f"[{old_idx}]", f"<<{old_idx}>>")
+
+        # Second pass: replace <<N>> with new sequential number [M]
+        for old_idx, new_idx in old_to_new.items():
+            renumbered_response = renumbered_response.replace(f"<<{old_idx}>>", f"[{new_idx}]")
+
+        # Build citation list with new indices
+        for old_idx in used_indices:
             # Citation indices are 1-based
-            result_idx = idx - 1
+            result_idx = old_idx - 1
             if 0 <= result_idx < len(retrieval_results):
                 result = retrieval_results[result_idx]
 
@@ -326,7 +343,7 @@ class ChatService:
                     excerpt += "..."
 
                 citations.append({
-                    "index": idx,
+                    "index": old_to_new[old_idx],
                     "chunk_id": str(result.chunk_id),
                     "document_id": str(result.document_id),
                     "document_name": result.document_name,
@@ -334,4 +351,4 @@ class ChatService:
                     "excerpt": excerpt,
                 })
 
-        return citations
+        return renumbered_response, citations
