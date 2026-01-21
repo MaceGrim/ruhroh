@@ -135,6 +135,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 set({
                   streamingCitations: [...get().streamingCitations, data],
                 });
+              } else if (data.title !== undefined) {
+                // Title event - update thread name
+                const { threads, currentThread } = get();
+                if (currentThread) {
+                  set({
+                    currentThread: { ...currentThread, name: data.title },
+                    threads: threads.map((t) =>
+                      t.id === currentThread.id ? { ...t, name: data.title } : t
+                    ),
+                  });
+                }
               } else if (data.message_id) {
                 // Done event - finalize the message
                 const assistantMessage: Message = {

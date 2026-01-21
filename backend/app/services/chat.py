@@ -29,6 +29,11 @@ RULES:
 CONTEXT:
 {context}"""
 
+TITLE_GENERATION_PROMPT = """Generate a very short title (2-4 words max) for a conversation that starts with this message.
+Return ONLY the title, no quotes, no punctuation at the end, no explanation.
+
+Message: {message}"""
+
 
 class ChatService:
     """Service for chat interactions."""
@@ -162,6 +167,54 @@ class ChatService:
 
         return await self.thread_repo.delete(thread_id)
 
+    async def _generate_thread_title(self, first_message: str) -> str:
+        """Generate a short title from the first message.
+
+        Args:
+            first_message: The first user message in the thread
+
+        Returns:
+            A 2-4 word title
+        """
+        try:
+            messages = [
+                {"role": "user", "content": TITLE_GENERATION_PROMPT.format(message=first_message[:500])}
+            ]
+            title = await self.llm_service.chat_completion(messages, max_tokens=20)
+            # Clean up the title - remove quotes and trailing punctuation
+            title = title.strip().strip('"\'').rstrip('.!?')
+            # Limit length
+            if len(title) > 50:
+                title = title[:47] + "..."
+            return title or "New Conversation"
+        except Exception as e:
+            logger.warning("Failed to generate thread title", error=str(e))
+            return "New Conversation"
+
+    async def update_thread_name(
+        self,
+        thread_id: UUID,
+        name: str,
+    ) -> Optional[dict]:
+        """Update thread name.
+
+        Args:
+            thread_id: Thread UUID
+            name: New name
+
+        Returns:
+            Updated thread dict or None
+        """
+        thread = await self.thread_repo.update_name(thread_id, name)
+        if not thread:
+            return None
+        return {
+            "id": str(thread.id),
+            "name": thread.name,
+            "created_at": thread.created_at.isoformat(),
+            "updated_at": thread.updated_at.isoformat(),
+        }
+
     async def send_message_stream(
         self,
         thread_id: UUID,
@@ -185,6 +238,10 @@ class ChatService:
         if not thread:
             yield {"event": "error", "data": {"code": "NOT_FOUND", "message": "Thread not found"}}
             return
+
+        # Check if this is the first message (for auto-title generation)
+        message_count = await self.message_repo.count_by_thread(thread_id)
+        is_first_message = message_count == 0
 
         # Save user message
         user_message = await self.message_repo.create(
@@ -244,6 +301,13 @@ class ChatService:
             is_from_documents=is_from_documents,
             token_count=self.llm_service.count_tokens(renumbered_response),
         )
+
+        # Generate title for new threads (after first message)
+        new_title = None
+        if is_first_message:
+            new_title = await self._generate_thread_title(content)
+            await self.thread_repo.update_name(thread_id, new_title)
+            yield {"event": "title", "data": {"title": new_title}}
 
         # Yield done with renumbered content for clients to update their display
         yield {
