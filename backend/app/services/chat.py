@@ -36,6 +36,29 @@ Return ONLY the title, no quotes, no punctuation at the end, no explanation.
 
 Message: {message}"""
 
+QUERY_REWRITE_PROMPT = """Rewrite this follow-up question into a standalone search query for document retrieval.
+
+CRITICAL: When the user asks about something mentioned in the conversation history, you MUST include its full description from the history. Look for definitions like "X - description" or "X: description" and include both the term AND the description.
+
+Rules:
+1. Find any terms in the query that were defined in history (e.g., "DDP3 - Balancing datasets")
+2. Include BOTH the abbreviation AND full description (e.g., "DDP3 Balancing datasets")
+3. Add relevant keywords from the definition
+4. Remove conversational phrases ("tell me more", "what about", "can you")
+5. Output plain text only, no quotes
+
+Example:
+History: User asked about DDPs. Assistant said "DDP3 - Balancing datasets: designing datasets with equal distribution of samples across labels"
+Query: "Can you tell me more about DDP3?"
+Output: DDP3 Balancing datasets equal distribution samples across labels
+
+HISTORY:
+{history}
+
+QUERY: {query}
+
+Rewritten query:"""
+
 
 class ChatService:
     """Service for chat interactions."""
@@ -171,6 +194,60 @@ class ChatService:
 
         return await self.thread_repo.delete(thread_id)
 
+    async def _rewrite_query_for_retrieval(
+        self,
+        query: str,
+        conversation_history: list,
+    ) -> str:
+        """Rewrite a follow-up query to be standalone for better retrieval.
+
+        Args:
+            query: Current user query
+            conversation_history: Previous messages in the conversation
+
+        Returns:
+            Rewritten query optimized for retrieval
+        """
+        # If no history, no need to rewrite
+        if not conversation_history:
+            return query
+
+        # Format history for the prompt
+        history_parts = []
+        for msg in conversation_history[-6:]:  # Last 3 exchanges max
+            role = "User" if msg.role == "user" else "Assistant"
+            # Truncate long messages
+            content = msg.content[:500] + "..." if len(msg.content) > 500 else msg.content
+            history_parts.append(f"{role}: {content}")
+
+        history_text = "\n".join(history_parts)
+
+        try:
+            messages = [
+                {
+                    "role": "user",
+                    "content": QUERY_REWRITE_PROMPT.format(
+                        history=history_text,
+                        query=query,
+                    ),
+                }
+            ]
+            rewritten = await self.llm_service.chat_completion(
+                messages, max_tokens=200, temperature=0.0
+            )
+            rewritten = rewritten.strip()
+
+            logger.info(
+                "Query rewritten for retrieval",
+                original=query,
+                rewritten=rewritten,
+            )
+            return rewritten
+
+        except Exception as e:
+            logger.warning("Query rewrite failed, using original", error=str(e))
+            return query
+
     async def _generate_thread_title(self, first_message: str) -> str:
         """Generate a short title from the first message.
 
@@ -265,9 +342,14 @@ class ChatService:
         # Yield searching status
         yield {"event": "status", "data": {"stage": "searching"}}
 
-        # Retrieve context
+        # Rewrite query for better retrieval (uses conversation context)
+        retrieval_query = await self._rewrite_query_for_retrieval(
+            content, conversation_history
+        )
+
+        # Retrieve context using the rewritten query
         context, retrieval_results = await self.retrieval_service.get_context_for_chat(
-            content, user_id
+            retrieval_query, user_id
         )
 
         is_from_documents = len(retrieval_results) > 0
